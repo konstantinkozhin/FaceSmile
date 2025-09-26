@@ -1,0 +1,275 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Повтори смайлик</title>
+<style>
+  :root{
+    --bg:#0f172a; --card:#111827; --text:#e2e8f0; --muted:#94a3b8;
+    --accent1:#22c55e; --accent2:#f59e0b; --btn1:#6366f1; --btn2:#22d3ee;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Inter,Arial;background:var(--bg);color:var(--text)}
+  .wrap{max-width:1100px;margin:0 auto;padding:24px}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  .card{background:var(--card);border-radius:20px;padding:16px;box-shadow:0 10px 30px rgba(0,0,0,.25)}
+  .title{font-size:20px;font-weight:700;margin-bottom:8px;display:flex;align-items:center;gap:10px}
+  .title::before{content:"";width:10px;height:10px;border-radius:999px;background:linear-gradient(135deg,var(--accent1),var(--accent2))}
+
+  /* Камера — показываем нативный <video>, без перерисовок */
+  .videoWrap{
+    position:relative;border-radius:14px;overflow:hidden;background:#0b1220;
+  }
+  #video{
+    width:100%; height:auto; display:block;
+    object-fit:cover;            /* красиво заполняет */
+    transform-origin:center center;
+    backface-visibility:hidden;  /* чуть сглаживает при CSS-трансформациях */
+  }
+  /* скрытый канвас для отправки кадров */
+  #sendCanvas{display:none}
+
+  /* Кнопки */
+  .btns{display:flex;gap:12px;margin:12px 0 0;flex-wrap:wrap}
+  .btn{
+    appearance:none;border:0;color:white;font-weight:700;padding:12px 18px;border-radius:14px;cursor:pointer;
+    background:linear-gradient(135deg,var(--btn1),var(--btn2));
+    box-shadow:0 8px 18px rgba(34,211,238,.25);
+    transition:transform .08s ease, box-shadow .2s ease, opacity .2s ease;
+  }
+  .btn.secondary{background:linear-gradient(135deg,#10b981,#f59e0b);box-shadow:0 8px 18px rgba(16,185,129,.25)}
+  .btn:disabled{opacity:.5;cursor:not-allowed;transform:none;box-shadow:none}
+  .iconbtn{width:46px;height:46px;display:inline-flex;align-items:center;justify-content:center;font-size:22px;padding:0;border-radius:12px;line-height:1;user-select:none}
+  .iconrow{display:flex;gap:10px;align-items:center;margin-left:auto}
+
+  /* Правый блок */
+  .goalname{font-size:28px;font-weight:700;margin:6px 0 12px 0;opacity:.95}
+  .emoji{font-size:240px;display:flex;align-items:center;justify-content:center;min-height:240px;text-align:center}
+  .emoji.big{font-size:260px}
+  #rightBody{display:flex;flex-direction:column;min-height:420px}
+  #rightBody .emoji{flex:1}
+  #timer{margin-top:6px;color:var(--muted)}
+  .gauge{width:100%;height:14px;background:#0b1220;border-radius:999px;overflow:hidden;margin-top:10px}
+  .gbar{height:100%;width:0%;background:linear-gradient(90deg,var(--accent1),var(--accent2));transition:width .12s ease}
+
+  /* Режим итога справа */
+  #rightBody.result{justify-content:center;align-items:center}
+  #rightBody.result #timer,
+  #rightBody.result .gauge,
+  #rightBody.result #goalName{display:none}
+
+  /* Галерея */
+  .gallery{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px}
+  .shot{width:180px}
+  .shot img{width:100%;border-radius:10px}
+  .shot .cap{text-align:center;margin-top:4px;color:var(--muted)}
+
+  @media (max-width:900px){
+    .grid{grid-template-columns:1fr}
+    .emoji{min-height:200px;font-size:180px}
+    .emoji.big{font-size:220px}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="grid">
+    <!-- Левая карточка -->
+    <div class="card" id="left">
+      <div class="title">Камера</div>
+
+      <div class="videoWrap">
+        <video id="video" autoplay playsinline muted></video>
+        <canvas id="sendCanvas"></canvas> <!-- offscreen для отправки -->
+      </div>
+
+      <div class="btns">
+        <button id="grant" class="btn iconbtn" title="Разрешить камеру">🎥</button>
+        <button id="start" class="btn secondary">🚀 Старт</button>
+        <div class="iconrow">
+          <button id="flipBtn" class="btn iconbtn" title="Зеркалить по горизонтали (↔)">↔️</button>
+          <button id="rotBtn" class="btn iconbtn" title="Повернуть на 90°">⤴️</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Правая карточка -->
+    <div class="card" id="right">
+      <div class="title" id="rightTitle">Цель</div>
+      <div id="rightBody">
+        <div id="goalName" class="goalname">—</div>
+        <div id="emoji" class="emoji">—</div>
+        <div id="timer">Осталось: —</div>
+        <div class="gauge" id="gauge"><div id="gbar" class="gbar"></div></div>
+      </div>
+    </div>
+
+    <div class="card" style="grid-column:1 / span 2">
+      <div class="title">Результаты</div>
+      <div id="final"></div>
+      <div id="gallery" class="gallery"></div>
+    </div>
+  </div>
+</div>
+<script>
+let stream=null, ws=null, running=false, sendTimer=null, finished=false, deadlineMs=null;
+let prevTarget=null, hbTimer=null;
+
+// состояния преобразований
+let flipX=false;
+let rotation=0; // 0|90|180|270
+
+function getSid(){
+  try{
+    let sid=localStorage.getItem('emo_sid');
+    if(!sid){ sid=crypto.randomUUID?crypto.randomUUID():(Date.now().toString(36)+Math.random().toString(36).slice(2)); localStorage.setItem('emo_sid',sid); }
+    return sid;
+  }catch(e){ return Math.random().toString(36).slice(2); }
+}
+const SID=getSid();
+
+function updateStartBtn(){
+  const b=document.getElementById('start');
+  if(finished){ b.disabled=false; b.textContent='🔁 Ещё раз'; }
+  else if(running){ b.disabled=true; b.textContent='⏱️ Игра идёт…'; }
+  else { b.disabled=false; b.textContent='🚀 Старт'; }
+}
+function updTimer(){
+  if(!deadlineMs){return}
+  const s=Math.max(0,(deadlineMs-Date.now())/1000);
+  document.getElementById('timer').textContent="Осталось: "+s.toFixed(1)+" c";
+}
+setInterval(updTimer,200);
+
+/* ===== Preview: CSS-трансформации только на <video> ===== */
+function applyPreviewTransform(){
+  const v=document.getElementById('video');
+  const scale = flipX ? -1 : 1;
+  v.style.transform = `scaleX(${scale}) rotate(${rotation}deg)`;
+}
+
+/* ===== Отправка: рисуем в offscreen-канвас с теми же трансформациями ===== */
+function drawToSendCanvas(){
+  const v=document.getElementById('video');
+  if(!(v.readyState >= 2)) return;
+
+  const vw=v.videoWidth, vh=v.videoHeight;
+  if(!vw || !vh) return;
+
+  const c=document.getElementById('sendCanvas');
+  const outW = (rotation % 180 === 0) ? vw : vh;
+  const outH = (rotation % 180 === 0) ? vh : vw;
+
+  if(c.width!==outW) c.width=outW;
+  if(c.height!==outH) c.height=outH;
+
+  const ctx=c.getContext('2d');
+  ctx.save();
+  ctx.clearRect(0,0,outW,outH);
+  ctx.translate(outW/2, outH/2);
+  ctx.rotate(rotation * Math.PI / 180);
+  ctx.scale(flipX ? -1 : 1, 1);
+  ctx.drawImage(v, -vw/2, -vh/2, vw, vh);
+  ctx.restore();
+}
+
+/* ===== Камера ===== */
+async function ensureCam(){
+  try{
+    stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:"user"},audio:false});
+    const v=document.getElementById('video');
+    v.srcObject=stream;
+    try{ await v.play(); }catch(_){}
+    document.getElementById('grant').disabled=true; document.getElementById('grant').textContent='✅';
+    applyPreviewTransform(); // сразу применим текущий режим
+  }catch(e){ console.error(e); }
+}
+document.getElementById('grant').onclick=ensureCam;
+
+/* ===== WS ===== */
+function connectWS(){
+  const proto=location.protocol==="https:"?"wss":"ws";
+  const url = proto + "://" + location.host + "/ws";
+  ws=new WebSocket(url);
+  ws.binaryType="arraybuffer";
+
+  ws.onopen=()=>{
+    ws.send(JSON.stringify({type:"hello", sid: SID}));
+    clearInterval(hbTimer);
+    hbTimer=setInterval(()=>{ if(ws && ws.readyState===1) ws.send(JSON.stringify({type:"hb", sid: SID})) }, 15000);
+  };
+  ws.onmessage=(ev)=>{
+    const msg=JSON.parse(ev.data);
+    if(msg.type==="state"){
+      document.getElementById('rightBody').classList.remove('result');
+      document.getElementById('rightTitle').textContent="Цель";
+      if(msg.target_emoji && msg.target_title){
+        document.getElementById('goalName').textContent = msg.target_emoji + " " + msg.target_title;
+      }
+      if(msg.target_emoji){ prevTarget=msg.target_emoji; document.getElementById('emoji').textContent=msg.target_emoji; }
+      if(typeof msg.remain_ms==="number"){ deadlineMs=Date.now()+msg.remain_ms; }
+      const prog=Math.max(0,Math.min(1,msg.progress||0));
+      document.getElementById('gbar').style.width=(prog*100).toFixed(0)+"%";
+      if(msg.started && running && ws.readyState===1){ pump(); }
+    }
+    if(msg.type==="final"){
+      finished=true; running=false; updateStartBtn();
+      document.getElementById('rightTitle').textContent="Результат";
+      document.getElementById('goalName').textContent="";
+      document.getElementById('emoji').textContent=msg.total;
+      document.getElementById('emoji').classList.add("big");
+      document.getElementById('rightBody').classList.add('result');
+
+      document.getElementById('final').textContent=`Итог: ${msg.total} смайлик(ов) за ${msg.duration} сек`;
+      const gal=document.getElementById('gallery'); gal.innerHTML="";
+      msg.gallery.forEach(g=>{
+        gal.innerHTML+=`<div class="shot"><img src="${g.data_url}"/><div class="cap">${g.emoji} ${g.title}</div></div>`;
+      });
+    }
+  };
+}
+connectWS();
+
+function sendStart(){
+  if(ws && ws.readyState===1){
+    ws.send(JSON.stringify({type:"start", sid: SID}));
+  }else{
+    connectWS();
+    setTimeout(()=>{ if(ws && ws.readyState===1) ws.send(JSON.stringify({type:"start", sid: SID})); }, 300);
+  }
+}
+
+/* ===== Управление ===== */
+document.getElementById('start').onclick=()=>{
+  if(!stream){ ensureCam(); return; }
+  finished=false; running=true; updateStartBtn();
+  document.getElementById('rightBody').classList.remove('result');
+  document.getElementById('rightTitle').textContent="Цель";
+  document.getElementById('emoji').classList.remove("big");
+  document.getElementById('final').textContent="";
+  document.getElementById('gallery').innerHTML="";
+  deadlineMs=null;
+  document.getElementById('gbar').style.width="0%";
+  sendStart();
+  pump();
+};
+document.getElementById('flipBtn').onclick=()=>{ flipX=!flipX; applyPreviewTransform(); };
+document.getElementById('rotBtn').onclick=()=>{ rotation=(rotation+90)%360; applyPreviewTransform(); };
+
+/* ===== Памп: отправляем кадры, не трогая предпросмотр ===== */
+function pump(){
+  clearInterval(sendTimer);
+  sendTimer=setInterval(()=>{
+    if(!running || !ws || ws.readyState!==1 || finished) return;
+    const v=document.getElementById('video');
+    if(!(v.readyState >= 2)) return;
+
+    drawToSendCanvas();
+    const c=document.getElementById('sendCanvas');
+    c.toBlob(b=>{ if(b) ws.send(b); },"image/jpeg",0.5);
+  }, 200);
+}
+</script>
+</body>
+</html>
