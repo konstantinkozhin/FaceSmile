@@ -4,7 +4,7 @@
 
 ---
 
-## 🎬 Демо / скриншоты
+## 🎬 Демо
 
 <img width="1710" height="900" alt="image" src="https://github.com/user-attachments/assets/441baf57-aa2d-487c-acad-30c3a6309945" />
 
@@ -47,19 +47,17 @@
 - Камера на устройстве  
 
 ```bash
-# Клонируем репозиторий
-git clone https://github.com/<you>/FaceSmile.git
-cd FaceSmile
+# 1) создать и активировать виртуальное окружение
+python3 -m venv .venv
+source .venv/bin/activate
 
-# Создаём виртуальное окружение
-python -m venv .venv
-source .venv/bin/activate      # Windows: .venv\Scripts\activate
-
-# Устанавливаем зависимости
+# 2) поставить зависимости
 pip install -r requirements.txt
 
-# Запускаем сервер
-uvicorn server:app --reload --host 0.0.0.0 --port 8000
+# 3) запустить сервер (любой способ ниже)
+python server.py
+# или
+uvicorn server:app --reload --host 127.0.0.1 --port 8000
 ```
 
 Открой в браузере: [http://localhost:8000](http://localhost:8000)
