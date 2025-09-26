@@ -75,6 +75,5 @@ FaceSmile/
 ├─ static/                  # фронтенд: HTML, CSS, JS
 │   └─ index.html           # основная страница с интерфейсом камеры
 ├─ server.py                # FastAPI-сервер: WebSocket + обработка кадров
-├─ requirements.txt         # зависимости Python
-└─ media/                   # гифки и скриншоты для README
+└─ requirements.txt         # зависимости Python                
 ```
