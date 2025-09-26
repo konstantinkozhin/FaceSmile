@@ -6,9 +6,7 @@
 
 ## 🎬 Демо / скриншоты
 
-![Демо](./media/demo.gif)
-
-*(замени на свой GIF, скриншот или ссылку на видео)*
+<img width="1710" height="900" alt="image" src="https://github.com/user-attachments/assets/441baf57-aa2d-487c-acad-30c3a6309945" />
 
 ---
 
